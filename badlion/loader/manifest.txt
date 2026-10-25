@@ -1,0 +1,4 @@
+Premain-Class: fx.sniper.bl.Bootstrap
+Agent-Class: fx.sniper.bl.Bootstrap
+Implementation-Title: blsnip-loader
+Implementation-Version: 1.0.0

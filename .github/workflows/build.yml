@@ -104,3 +104,43 @@ jobs:
           python-version: "3.11"
       - name: Syntax check
         run: python -m py_compile tools/snipe_engine.py
+
+  loader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+
+      - name: Build loader jar
+        run: bash badlion/loader/build.sh
+
+      # Compiles a fake 1.8.9 client (notch-named classes, same member shapes)
+      # and runs the real loader against it: asserts the sidebar/header parse,
+      # the bridge whitelist and the join path.
+      - name: Smoke test
+        id: smoke
+        run: |
+          set +e
+          bash badlion/loader/test/run.sh > smoke.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            grep -E "FAIL|SMOKE|Exception" smoke.log | head -25 | while IFS= read -r line; do
+              echo "::error title=smoke::$line"
+            done
+            echo "----- tail -----"
+            tail -40 smoke.log
+          fi
+          exit $rc
+
+      - name: Upload loader
+        if: steps.smoke.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: blsnip-loader
+          path: badlion/loader/build/blsnip-loader.jar
+          if-no-files-found: error

@@ -68,14 +68,16 @@ gradlew.bat build --no-daemon
 ```
 
 أو استخدم الـ CI: كل push على `main` بيبني الـ jar ويرفعه في **Actions → build →
-Artifacts → bedwars-sniper**.
+Artifacts → bedwars-sniper**. نفس الـ workflow بيبني `blsnip-loader` (نسخة Badlion)
+و `badlion-injector` (الحاقن)، وبيشغّل smoke test على الـ loader بكلاينت وهمي.
 
 ### التركيب في اللعبة
 
 - **Forge 1.8.9 عادي:** حط الـ jar في `%appdata%\.minecraft\mods\`
-- **Badlion:** لازم تضيف نسخة **Forge 1.8.9** في launcher، مش الـ core client —
-  الـ core client بيرفض الـ jars الخارجية.
-- **Lunar:** نفس القاعدة.
+- **Badlion:** الـ core client مش بيحمّل jars خارجية ولا فيه Forge runtime. شغّل
+  `badlion/loader/blsnip-loader.jar` كـ `-javaagent` (`%JAVA_TOOL_OPTIONS%`) أو
+  احقنه بـ `badlion/native/inject.exe`. التفاصيل في `badlion/README.md`.
+- **Lunar:** نفس قاعدة Badlion.
 
 ---
 
