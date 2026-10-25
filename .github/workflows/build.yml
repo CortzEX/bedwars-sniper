@@ -62,10 +62,29 @@ jobs:
           java-version: "8"
 
       - name: Configure
-        run: cmake -S badlion/native -B native-build -A x64 -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+        run: |
+          "JAVA_HOME=$env:JAVA_HOME"
+          "jni.h present: $(Test-Path "$env:JAVA_HOME/include/jni.h")"
+          cmake -S badlion/native -B native-build -A x64 -DCMAKE_BUILD_TYPE=Release *>&1 |
+            Tee-Object -FilePath cfg.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content cfg.log | Select-Object -Last 30 |
+              ForEach-Object { Write-Output "::error title=cmake-configure::$_" }
+            exit 1
+          }
 
       - name: Build
-        run: cmake --build native-build --config Release
+        shell: pwsh
+        run: |
+          cmake --build native-build --config Release *>&1 | Tee-Object -FilePath build-native.log
+          if ($LASTEXITCODE -ne 0) {
+            # Surface the first diagnostics: job logs need auth, annotations do not.
+            Select-String -Path build-native.log -Pattern "error|warning C" |
+              Select-Object -First 25 |
+              ForEach-Object { Write-Output "::error title=msvc::$($_.Line.Trim())" }
+            exit 1
+          }
 
       - name: Upload injector
         uses: actions/upload-artifact@v4
