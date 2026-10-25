@@ -18,20 +18,29 @@ jobs:
           distribution: temurin
           java-version: "8"
 
-      - name: Set up Gradle 4.10.1 (ForgeGradle 2.1 ceiling)
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "4.10.1"
+      # ForgeGradle 2.1 does not work above Gradle 3.x. The MDK ships 2.14.
+      - name: Install Gradle 2.14.1
+        run: |
+          curl -sSLo gradle.zip https://services.gradle.org/distributions/gradle-2.14.1-bin.zip
+          unzip -q gradle.zip
+          echo "$PWD/gradle-2.14.1/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        run: gradle build --no-daemon
+        run: gradle build --no-daemon --stacktrace
+        continue-on-error: true
+        id: build
 
       - name: Upload jar
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: bedwars-sniper
           path: build/libs/*.jar
           if-no-files-found: warn
+
+      - name: Surface build failure
+        if: steps.build.outcome != 'success'
+        run: exit 1
 
   engine:
     runs-on: ubuntu-latest

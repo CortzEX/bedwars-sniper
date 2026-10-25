@@ -1,7 +1,9 @@
 buildscript {
     repositories {
-        mavenCentral()
+        // ForgeGradle 2.x only lives on the legacy maven; the new mirror does not carry it.
+        maven { url = "https://files.minecraftforge.net/maven" }
         maven { url = "https://maven.minecraftforge.net/" }
+        mavenCentral()
     }
     dependencies {
         classpath "net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT"
