@@ -34,7 +34,10 @@ jobs:
           if [ $rc -ne 0 ]; then
             # Surface the real cause as check-run annotations, which are readable
             # over the public API — job logs are not.
-            awk '/What went wrong/,/^\* Try/' build.log | head -14 | while IFS= read -r line; do
+            grep -E "\.java:[0-9]+: (error|warning):" build.log | head -25 | while IFS= read -r line; do
+              echo "::error title=javac::$line"
+            done
+            awk '/What went wrong/,/^\* Try/' build.log | head -8 | while IFS= read -r line; do
               [ -n "$line" ] && echo "::error title=gradle::$line"
             done
             echo "----- tail -----"
