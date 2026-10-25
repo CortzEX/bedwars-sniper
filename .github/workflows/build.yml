@@ -26,9 +26,21 @@ jobs:
           echo "$PWD/gradle-2.14.1/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        run: gradle build --no-daemon --stacktrace
-        continue-on-error: true
         id: build
+        run: |
+          set +e
+          gradle build --no-daemon --stacktrace > build.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            # Surface the real cause as check-run annotations, which are readable
+            # over the public API — job logs are not.
+            awk '/What went wrong/,/^\* Try/' build.log | head -14 | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error title=gradle::$line"
+            done
+            echo "----- tail -----"
+            tail -40 build.log
+          fi
+          exit $rc
 
       - name: Upload jar
         if: steps.build.outcome == 'success'
@@ -37,10 +49,6 @@ jobs:
           name: bedwars-sniper
           path: build/libs/*.jar
           if-no-files-found: warn
-
-      - name: Surface build failure
-        if: steps.build.outcome != 'success'
-        run: exit 1
 
   engine:
     runs-on: ubuntu-latest
