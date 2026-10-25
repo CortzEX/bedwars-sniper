@@ -34,6 +34,7 @@ Minecraft=ave            NetHandlerPlayClient=bcy     Scoreboard=auo
 EntityPlayerSP=bew       NetworkPlayerInfo=bdc        ScoreObjective=auk
 GuiIngame=avo            GuiPlayerTabOverlay=awh      Score=aum
 GuiNewChat=avt           World=adm                    IChatComponent=eu
+GuiScreen=axu            Gui=avp                      FontRenderer=avn
 ```
 
 الأعضاء بتتحل بالشكل (signature)، مش بالاسم:
@@ -83,6 +84,39 @@ C:\blsnip\
 `blagent.dll` بيدوّر على `blsnip-loader.jar` جنبه، أو على `%BLSNIP_JAR%` لو محدد.
 اللوج: `agent.log` جنب الـ dll، ولوج الـ Java في `blsnip.log`.
 
+## القائمة جوه اللعبة — F6
+
+بعد ما الـ loader يتربط باللعبة، دوس **F6** وهتلاقي شاشة في نص اللعبة فيها:
+
+| خانة | إيه بتعمل |
+|---|---|
+| `target name` | اسم اللاعب اللي بتدور عليه — بيتحفظ ويكمّل بعد restart |
+| `hypixel api key` | مفتاح من `developer.hypixel.net` — من غيره الشغل على التاب ليست بس |
+| `party join` | يبعت `/p join` أول ما التارجت يظهر |
+| `auto queue` | يعمل `/play bedwars_<mode>` بعد الإشعار |
+| `status` | آخر 6 سطور: فتح/قفل، `offline`، `mode / map` |
+
+- **Enter** يحفظ، **Esc** يقفل، **Tab** ينقّل بين الخانتين، والمفاتيح بتمشي عادي.
+- الحفظ بيكتب `snipe_ui.txt`، والـ loader بياخده ويحدّث `blsnip.properties` (من غير ما
+  يمسح الكومنتات) ويكمّل **من غير restart**.
+- كل إشعار بيطلع **جوه الشات + توست في نص الشاشة** (`displayTitle`)، فمش لازم تبص
+  على اللوج.
+
+القائمة مبنية على `GuiScreen` الحقيقي (`axu` في 1.8.9)، عشان كده كلاسها في الـ
+default package ومترجم على stubs من `screen/stubs` — الـ stubs دي مش بتتحط في الـ
+jar، الـ JVM بيربط الكلاسات بالاسم والشكل وقت التشغيل.
+
+### مسار الـ API (لما التارجت قافل الـ API)
+
+`apiKey` + `target` = كل `statusSeconds` ثانية الـ loader بيسأل:
+
+1. Mojang `users/profiles/minecraft/<name>` → UUID (بيتخزن مؤقتًا، مش بيتغير).
+2. Hypixel `GET /v2/status?uuid=<uuid>` بهيدر `API-Key`.
+
+لو رجع `BEDWARS` + `mode` + `map`: إشعار فوري بالاتنين، ولو `autoQueue` شغّال
+بيبعت `/play bedwars_<mode>`. لو اللاعب قافل الـ API (`session` فاضي أو `online=false`)
+بيقولك `offline` وبيكمّل على مسار التاب ليست.
+
 ## الملفات اللي الـ loader بيقراها/بيكتبها
 
 مكانها = مكان الـ jar، أو `%BLSNIP_DIR%` لو محدد.
@@ -90,7 +124,9 @@ C:\blsnip\
 | ملف | مين بيكتبه | إيه فيه |
 |---|---|---|
 | `targets.txt` | إنت | يوزرنيم في كل سطر، `#` للتعليق |
-| `blsnip.properties` | إنت / الـ loader أول مرة | `autoJoin`, `autoQueue`, `queueCommand`, `pollMs`, `joinGapMs`, `maxPerTarget`, `windowMinutes` |
+| `blsnip.properties` | إنت / الـ loader أول مرة / القائمة | `target`, `apiKey`, `autoJoin`, `autoQueue`, `queueCommand`, `chat`, `title`, `statusSeconds`, `pollMs`, `joinGapMs`, `maxPerTarget`, `windowMinutes` |
+| `snipe_ui.txt` | القائمة (F6) | `target=`, `apiKey=`, `partyJoin=`, `autoQueue=` |
+| `ui_status.txt` | الـ loader | آخر 6 سطور حالة، القائمة بتقراها |
 | `snipe_cmd.txt` | `tools/snipe_engine.py` | أمر واحد بس، whitelist: `/play`, `/lobby`, `/p join`, `/swaplobby`, `/rejoin` |
 | `state.txt` | الـ loader | `server=`, `mode=`, `map=`, `seen=`, `tab=` |
 | `probe.txt` | الـ loader | header + footer + sidebar + التاب ليست زي ما اتقروا بالظبط |
@@ -143,9 +179,15 @@ badlion/
 │   ├── src/fx/sniper/bl/
 │   │   ├── Bootstrap.java  ← premain/agentmain، الـ worker، الملفات، الجارد ريلز
 │   │   ├── Mc.java         ← كل حاجة بتتقرا من اللعبة، بالـ signature
+│   │   ├── Ui.java         ← حالة القائمة + سطور الحالة
+│   │   ├── Status.java     ← Mojang UUID + Hypixel /v2/status
+│   │   ├── Keys.java       ← F6 من غير ما نترجم على LWJGL
 │   │   ├── Notch.java      ← جدول الكلاسات (notch + MCP)
 │   │   ├── Ref.java        ← reflection آمن
 │   │   └── Log.java        ← blsnip.log
+│   ├── screen/
+│   │   ├── src/SnipeScreen.java  ← القائمة (default package، extends axu)
+│   │   └── stubs/                ← بدائل وقت الترجم بس، مش في الـ jar
 │   ├── notch.properties
 │   ├── manifest.txt
 │   ├── build.bat / build.sh

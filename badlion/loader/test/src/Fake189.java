@@ -29,7 +29,8 @@ public final class Fake189 {
 
     public static void main(String[] args) throws Exception {
         Path dir = ownDir();
-        for (String f : new String[] { "state.txt", "probe.txt", "blsnip.log", "snipe_cmd.txt" }) {
+        for (String f : new String[] { "state.txt", "probe.txt", "blsnip.log", "snipe_cmd.txt",
+            "snipe_ui.txt", "ui_status.txt", "blsnip.properties" }) {
             Files.deleteIfExists(dir.resolve(f));
         }
         write(dir.resolve("targets.txt"), "TargetPlayer1\n");
@@ -74,10 +75,23 @@ public final class Fake189 {
 
         // ---- run ----------------------------------------------------------
         Bootstrap.install("smoke");
+
+        // Menu save path: the screen writes snipe_ui.txt, the worker picks it up.
+        write(dir.resolve("snipe_ui.txt"),
+            "target=TargetFromMenu\napiKey=\npartyJoin=true\nautoQueue=false\n");
+
         Thread.sleep(2500);
 
         String state = read(dir.resolve("state.txt"));
         String probe = read(dir.resolve("probe.txt"));
+        String props = read(dir.resolve("blsnip.properties"));
+
+        check("menu save wrote target", props.contains("target=TargetFromMenu"));
+        check("menu save kept comments", props.contains("# blsnip loader"));
+        check("menu save kept autoJoin", props.contains("autoJoin=true"));
+        check("menu status feed mirrored", !read(dir.resolve("ui_status.txt")).isEmpty());
+        check("menu status feed live", !fx.sniper.bl.Ui.lines().isEmpty());
+        check("toast raised on bind", gui.titleMain != null);
 
         check("state written", !state.isEmpty());
         check("bound", state.contains("bound=true"));
@@ -158,11 +172,21 @@ class ave {
     bew thePlayer;
     adm theWorld;
     avo ingameGUI;
+    axu m;
 
     /** Minecraft.addScheduledTask — runs inline, like the client thread would. */
     void addScheduledTask(Runnable task) {
         task.run();
     }
+
+    /** Minecraft.displayGuiScreen */
+    void a(axu screen) {
+        this.m = screen;
+    }
+}
+
+/** net.minecraft.client.gui.GuiScreen — only the shape the loader resolves. */
+class axu {
 }
 
 /** net.minecraft.client.entity.EntityPlayerSP */
@@ -211,8 +235,23 @@ class avo {
 
     awh tab;
 
+    String titleMain;
+    String titleSub;
+    String record;
+
     awh getTabList() {
         return tab;
+    }
+
+    /** GuiIngame.displayTitle */
+    void a(String main, String sub, int a, int b, int c) {
+        this.titleMain = main;
+        this.titleSub = sub;
+    }
+
+    /** GuiIngame.setRecordPlaying */
+    void a(String line, boolean aboveHotbar) {
+        this.record = line;
     }
 }
 

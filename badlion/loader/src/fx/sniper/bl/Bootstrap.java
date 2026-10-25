@@ -53,6 +53,9 @@ public final class Bootstrap {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final long INSTANCE_WINDOW_MS = 20_000L;
 
+    /** The menu lives in the default package: it extends the game's {@code GuiScreen}. */
+    private static final String MENU_CLASS = "SnipeScreen";
+
     private static volatile Thread worker;
 
     private Bootstrap() {
@@ -132,6 +135,8 @@ public final class Bootstrap {
         private final Path bridgePath;
         private final Path statePath;
         private final Path probePath;
+        private final Path uiPath;
+        private final Path uiStatusPath;
 
         private final Notch notch = new Notch();
 
@@ -162,6 +167,21 @@ public final class Bootstrap {
 
         private volatile Snapshot snap = Snapshot.OFFLINE;
 
+        private final Properties props = new Properties();
+
+        private boolean f6Down;
+        private long lastMenuAt;
+        private Class<?> menuClass;
+        private boolean menuTried;
+
+        private long nextStatusAt;
+        private String lastStatusKey;
+        private String lastQueued;
+
+        private long uiStamp;
+        private String lastUiFile = "";
+        private String lastUiStatus = "";
+
         Runner(Path dir) {
             this.dir = dir;
             this.targetsPath = dir.resolve("targets.txt");
@@ -169,6 +189,11 @@ public final class Bootstrap {
             this.bridgePath = dir.resolve("snipe_cmd.txt");
             this.statePath = dir.resolve("state.txt");
             this.probePath = dir.resolve("probe.txt");
+            this.uiPath = dir.resolve("snipe_ui.txt");
+            this.uiStatusPath = dir.resolve("ui_status.txt");
+            // The menu is compiled without any loader type, so the two sides meet on
+            // this property: the menu reads and writes plain files in this directory.
+            System.setProperty("blsnip.dir", dir.toString());
         }
 
         @Override
@@ -192,15 +217,213 @@ public final class Bootstrap {
 
         private void step() {
             reloadConfig();
+            pumpUi();
             ensureBound();
             if (mc == null || !mc.isBound()) {
                 writeState();
+                writeUiStatus();
                 return;
             }
+            pumpKey();
             pumpBridge();
+            pumpStatus();
             scan();
             writeState();
             writeProbe();
+            writeUiStatus();
+        }
+
+        // ----------------------------------------------------------- menu
+
+        private void pumpKey() {
+            boolean down = Keys.held(Keys.F6);
+            if (down && !f6Down) {
+                long now = System.currentTimeMillis();
+                if (now - lastMenuAt > 500L) {
+                    lastMenuAt = now;
+                    openMenu();
+                }
+            }
+            f6Down = down;
+        }
+
+        private void openMenu() {
+            if (!mc.screensSupported()) {
+                Log.once("menu.unsupported", "menu unavailable: GuiScreen not resolved");
+                return;
+            }
+            if (mc.screenOpen()) return;
+
+            Object screen = newMenu();
+            if (screen == null) return;
+            if (mc.displayScreen(screen)) {
+                Ui.status("menu open");
+            } else {
+                Log.once("menu.open", "displayGuiScreen refused the menu");
+            }
+        }
+
+        private Object newMenu() {
+            if (menuClass == null && !menuTried) {
+                menuTried = true;
+                menuClass = loadMenuClass();
+            }
+            if (menuClass == null) return null;
+            try {
+                return menuClass.newInstance();
+            } catch (Throwable e) {
+                Log.error("menu constructor failed", e);
+                return null;
+            }
+        }
+
+        /**
+         * Finds the menu class in a loader whose parent can see the game classes.
+         *
+         * <p>The menu extends the game's {@code GuiScreen}, so it has to live in the
+         * default package and it has to be defined by a loader that resolves that
+         * class to the same one {@code displayGuiScreen} takes. First the game's own
+         * loader is tried; when that cannot see the loader jar, a child loader over
+         * the jar is built with the game loader as its parent.
+         */
+        private Class<?> loadMenuClass() {
+            ClassLoader game = mc.gameLoader();
+            for (ClassLoader candidate : new ClassLoader[] { game, Bootstrap.class.getClassLoader() }) {
+                if (candidate == null) continue;
+                try {
+                    Class<?> found = Class.forName(MENU_CLASS, true, candidate);
+                    Log.info("menu class loaded from " + candidate.getClass().getName()
+                        + " super=" + found.getSuperclass().getName());
+                    return found;
+                } catch (Throwable e) {
+                    Log.info("menu not loadable from " + candidate.getClass().getName() + ": " + e);
+                }
+            }
+
+            URL own = ownLocation();
+            if (game != null && own != null) {
+                try {
+                    MenuLoader child = new MenuLoader(new URL[] { own }, game);
+                    Class<?> found = Class.forName(MENU_CLASS, true, child);
+                    Log.info("menu class loaded through a child of "
+                        + game.getClass().getName());
+                    return found;
+                } catch (Throwable e) {
+                    Log.error("menu class missing — rebuild with build.bat", e);
+                    return null;
+                }
+            }
+            Log.error("menu class missing — no loader could see " + MENU_CLASS, null);
+            return null;
+        }
+
+        private static URL ownLocation() {
+            try {
+                CodeSource source = Bootstrap.class.getProtectionDomain().getCodeSource();
+                return source == null ? null : source.getLocation();
+            } catch (Throwable e) {
+                return null;
+            }
+        }
+
+        /** Menu edits land here: config in memory, then the file, then the screen. */
+        private void pumpUi() {
+            long now = stamp(uiPath);
+            if (now == uiStamp) return;
+            uiStamp = now;
+
+            String text = readAll(uiPath);
+            if (text.isEmpty() || text.equals(lastUiFile)) return;
+            lastUiFile = text;
+
+            Properties values = new Properties();
+            try {
+                values.load(new java.io.ByteArrayInputStream(
+                    text.getBytes(StandardCharsets.UTF_8)));
+            } catch (Exception e) {
+                Log.once("ui.parse", "cannot parse snipe_ui.txt: " + e);
+                return;
+            }
+            applyUi(Cfg.text(values, "target", "", 16), Cfg.text(values, "apiKey", "", 36),
+                Cfg.bool(values, "partyJoin", true), Cfg.bool(values, "autoQueue", false));
+        }
+
+        private void applyUi(String target, String apiKey, boolean partyJoin, boolean autoQueue) {
+            Map<String, String> updates = new HashMap<String, String>();
+            updates.put("target", target);
+            updates.put("apiKey", apiKey);
+            updates.put("autoJoin", String.valueOf(partyJoin));
+            updates.put("autoQueue", String.valueOf(autoQueue));
+            writeFile(propsPath, mergeProps(readAll(propsPath), updates));
+
+            propsStamp = stamp(propsPath);
+            cfg = Cfg.load(propsPath);
+            loadProps();
+            syncUi(cfg);
+            Log.info("menu saved: target=" + (target.isEmpty() ? "(none)" : target)
+                + " key=" + (apiKey.isEmpty() ? "(none)" : "set")
+                + " join=" + partyJoin + " queue=" + autoQueue);
+            Ui.status("saved: " + (target.isEmpty() ? "no target" : target)
+                + (apiKey.isEmpty() ? "" : " + key"));
+        }
+
+        /** Mirrors the menu's status feed to a file the menu reads back. */
+        private void writeUiStatus() {
+            List<String> lines = Ui.lines();
+            StringBuilder sb = new StringBuilder();
+            for (String line : lines) sb.append(line).append('\n');
+            String text = sb.toString();
+            if (text.equals(lastUiStatus)) return;
+            lastUiStatus = text;
+            writeFile(uiStatusPath, text);
+        }
+
+        // --------------------------------------------------------- status
+
+        private void pumpStatus() {
+            String name = Ui.target.trim();
+            String apiKey = Ui.apiKey.trim();
+            if (name.isEmpty() || apiKey.isEmpty()) return;
+
+            long now = System.currentTimeMillis();
+            if (now < nextStatusAt) return;
+            nextStatusAt = now + Math.max(5, cfg.statusSeconds) * 1000L;
+
+            String uuid = Status.uuidFor(name);
+            if (uuid == null) {
+                Ui.status(name + ": no such account");
+                return;
+            }
+            Status.Result result = Status.status(uuid, apiKey);
+            if (result == null) {
+                Ui.status("status call failed — check the key");
+                return;
+            }
+            if (!result.online) {
+                Ui.status(name + ": offline");
+                lastStatusKey = null;
+                return;
+            }
+            if (!result.bedwars()) {
+                Ui.status(name + ": " + result.gameType);
+                lastStatusKey = null;
+                return;
+            }
+
+            String key = result.mode + "|" + result.map;
+            Ui.status(name + ": " + result.mode + " / " + result.map);
+            if (key.equals(lastStatusKey)) return;
+            lastStatusKey = key;
+
+            notify("\u00a7b[snip] \u00a7f" + name + " \u00a77\u2192 \u00a7e" + result.mode
+                + " \u00a77(" + result.map + ")", name + " - " + result.mode + " - " + result.map);
+
+            if (!cfg.autoQueue) return;
+            String command = result.queueCommand();
+            if (command == null || command.equals(lastQueued)) return;
+            lastQueued = command;
+            mc.sendChat("/" + command);
+            Log.info("queued: /" + command);
         }
 
         // -------------------------------------------------------- files
@@ -215,7 +438,29 @@ public final class Bootstrap {
             if (pStamp != propsStamp) {
                 propsStamp = pStamp;
                 cfg = Cfg.load(propsPath);
+                loadProps();
+                syncUi(cfg);
             }
+        }
+
+        /** Keeps the raw properties so a menu save can rewrite one key at a time. */
+        private void loadProps() {
+            Properties loaded = new Properties();
+            try {
+                loaded.load(new java.io.ByteArrayInputStream(
+                    readAll(propsPath).getBytes(StandardCharsets.UTF_8)));
+            } catch (Exception e) {
+                Log.once("props.load", "cannot parse blsnip.properties: " + e);
+            }
+            props.clear();
+            props.putAll(loaded);
+        }
+
+        private static void syncUi(Cfg cfg) {
+            Ui.target = cfg.target;
+            Ui.apiKey = cfg.apiKey;
+            Ui.partyJoin = cfg.autoJoin;
+            Ui.autoQueue = cfg.autoQueue;
         }
 
         private Set<String> readTargets() {
@@ -270,7 +515,7 @@ public final class Bootstrap {
             }
             if (mc.bind()) {
                 Log.info("bound after " + bindAttempts + " attempt(s)");
-                mc.chat("\u00a7a[blsnip] \u00a7fready \u2014 \u00a7e" + targets.size()
+                announce("\u00a7a[blsnip] \u00a7fready \u2014 \u00a7e" + targets.size()
                     + "\u00a7f target(s)");
             }
         }
@@ -293,10 +538,32 @@ public final class Bootstrap {
             return null;
         }
 
+        /**
+         * Defines the menu class itself, but asks the game loader for everything it
+         * references — so the {@code GuiScreen} it extends is the very class
+         * {@code Minecraft.displayGuiScreen} accepts.
+         */
+        private static final class MenuLoader extends java.net.URLClassLoader {
+
+            MenuLoader(URL[] urls, ClassLoader parent) {
+                super(urls, parent);
+            }
+
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (!MENU_CLASS.equals(name)) return super.loadClass(name, resolve);
+                synchronized (getClassLoadingLock(name)) {
+                    Class<?> found = findLoadedClass(name);
+                    if (found == null) found = findClass(name);
+                    if (resolve) resolveClass(found);
+                    return found;
+                }
+            }
+        }
+
         // -------------------------------------------------------- bridge
 
-        private void pumpBridge() {
-            if (!Files.isRegularFile(bridgePath)) return;
+        private void pumpBridge() {            if (!Files.isRegularFile(bridgePath)) return;
 
             long modified;
             try {
@@ -397,6 +664,11 @@ public final class Bootstrap {
             boolean inWorld = mc.inWorld();
 
             Set<String> wanted = targets;
+            String single = Ui.target.trim().toLowerCase(Locale.ROOT);
+            if (!single.isEmpty()) {
+                wanted = new HashSet<String>(targets);
+                wanted.add(single);
+            }
             if (!wanted.isEmpty()) {
                 for (String name : tab) {
                     if (name == null || name.isEmpty()) continue;
@@ -445,6 +717,16 @@ public final class Bootstrap {
 
         private void announce(String message) {
             if (cfg.chat) mc.chat(message);
+            if (cfg.title) mc.title("\u00a7bblsnip", Mc.strip(message));
+            Ui.status(Mc.strip(message));
+            Log.info(Mc.strip(message));
+        }
+
+        /** Chat line plus centre-screen toast — what the player actually notices. */
+        private void notify(String message, String sub) {
+            if (cfg.chat) mc.chat(message);
+            if (cfg.title) mc.title("\u00a7bblsnip", sub);
+            Ui.status(Mc.strip(message));
             Log.info(Mc.strip(message));
         }
 
@@ -513,8 +795,36 @@ public final class Bootstrap {
         }
     }
 
-    private static void truncate(Path path) {
-        try {
+    /**
+     * Rewrites {@code key=value} lines in place, keeps every comment, and appends
+     * keys the file does not have yet.
+     */
+    private static String mergeProps(String existing, Map<String, String> updates) {
+        String base = existing == null ? "" : existing.trim();
+        if (base.isEmpty()) base = Cfg.defaults();
+
+        Map<String, String> pending = new HashMap<String, String>(updates);
+        StringBuilder out = new StringBuilder();
+        for (String line : base.split("\\r?\\n", -1)) {
+            String trimmed = line.trim();
+            int eq = trimmed.indexOf('=');
+            if (!trimmed.startsWith("#") && eq > 0) {
+                String key = trimmed.substring(0, eq).trim();
+                String value = pending.remove(key);
+                if (value != null) {
+                    out.append(key).append('=').append(value).append('\n');
+                    continue;
+                }
+            }
+            out.append(line).append('\n');
+        }
+        for (Map.Entry<String, String> e : pending.entrySet()) {
+            out.append(e.getKey()).append('=').append(e.getValue()).append('\n');
+        }
+        return out.toString();
+    }
+
+    private static void truncate(Path path) {        try {
             Files.write(path, new byte[0], StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception e) {
@@ -596,7 +906,11 @@ public final class Bootstrap {
         boolean autoJoin = true;
         boolean autoQueue = false;
         boolean chat = true;
+        boolean title = true;
+        String target = "";
+        String apiKey = "";
         String queueCommand = "play bedwars_eight_one";
+        int statusSeconds = 8;
         int pollMs = 500;
         int joinGapMs = 3000;
         int maxPerTarget = 5;
@@ -621,6 +935,10 @@ public final class Bootstrap {
             cfg.autoJoin = bool(props, "autoJoin", cfg.autoJoin);
             cfg.autoQueue = bool(props, "autoQueue", cfg.autoQueue);
             cfg.chat = bool(props, "chat", cfg.chat);
+            cfg.title = bool(props, "title", cfg.title);
+            cfg.target = text(props, "target", cfg.target, 16);
+            cfg.apiKey = text(props, "apiKey", cfg.apiKey, 36);
+            cfg.statusSeconds = clamp(intOf(props, "statusSeconds", cfg.statusSeconds), 5, 600);
             String queue = props.getProperty("queueCommand", cfg.queueCommand).trim();
             if (!queue.isEmpty()) cfg.queueCommand = queue;
             cfg.pollMs = clamp(intOf(props, "pollMs", cfg.pollMs), 100, 5000);
@@ -633,6 +951,11 @@ public final class Bootstrap {
 
         private static String defaults() {
             return "# blsnip loader — restart-free, re-read when the file changes\n"
+                + "# Set from the in-game menu (F6); hand edits work the same way.\n"
+                + "target=\n"
+                + "# Hypixel API key from https://developer.hypixel.net — enables mode/map\n"
+                + "# reporting even when the target hides from the tab list.\n"
+                + "apiKey=\n"
                 + "# Send /p join to a detected target. Off = detect and report only.\n"
                 + "autoJoin=true\n"
                 + "# Queue Bedwars right after the party invite goes out.\n"
@@ -640,11 +963,23 @@ public final class Bootstrap {
                 + "queueCommand=play bedwars_eight_one\n"
                 + "# Print detections into the in-game chat.\n"
                 + "chat=true\n"
+                + "# Centre-screen toast on every detection.\n"
+                + "title=true\n"
+                + "# Seconds between Hypixel status polls (only used when apiKey is set).\n"
+                + "statusSeconds=8\n"
                 + "pollMs=500\n"
                 + "joinGapMs=3000\n"
                 + "maxPerTarget=5\n"
                 + "windowMinutes=10\n"
                 + "probeSeconds=10\n";
+        }
+
+        private static String text(Properties props, String key, String fallback, int max) {
+            String raw = props.getProperty(key, fallback);
+            if (raw == null) return fallback;
+            String value = raw.trim();
+            if (value.length() > max) value = value.substring(0, max);
+            return value;
         }
 
         private static boolean bool(Properties props, String key, boolean fallback) {

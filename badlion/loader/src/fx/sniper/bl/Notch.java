@@ -43,6 +43,7 @@ public final class Notch {
         put("World", "adm", "net.minecraft.world.World");
         put("IChatComponent", "eu", "net.minecraft.util.IChatComponent");
         put("ChatComponentText", "fa", "net.minecraft.util.ChatComponentText");
+        put("GuiScreen", "axu", "net.minecraft.client.gui.GuiScreen");
     }
 
     private final Map<String, String[]> table = new HashMap<String, String[]>();

@@ -53,6 +53,7 @@ public final class Mc {
     private Class<?> worldClass;
     private Class<?> chatClass;
     private Class<?> chatTextClass;
+    private Class<?> guiScreenClass;
 
     private Field mcInstanceField;
     private Field thePlayerField;
@@ -74,11 +75,15 @@ public final class Mc {
     private Method textMethod;
     private Method netGetterMethod;
     private Method profileMethod;
+    private Method displayScreenMethod;
+    private Method titleMethod;
+    private Method recordMethod;
 
     private Constructor<?> chatTextCtor;
 
     private Field headerField;
     private Field footerField;
+    private Field currentScreenField;
 
     private final List<Field> infoMapCandidates = new ArrayList<Field>();
     private Field infoMapField;
@@ -118,6 +123,9 @@ public final class Mc {
         Log.info("meth  sortedScores     = " + Ref.describe(getSortedScoresMethod));
         Log.info("meth  score.name       = " + Ref.describe(scoreNameMethod));
         Log.info("meth  team.format(name)= " + Ref.describe(teamFormatMethod));
+        Log.info("meth  displayScreen    = " + Ref.describe(displayScreenMethod));
+        Log.info("meth  title            = " + Ref.describe(titleMethod));
+        Log.info("field currentScreen    = " + Ref.describe(currentScreenField));
         Log.info("field board maps       = " + boardMapFields.size());
         Log.info("meth  player.addChat   = " + Ref.describe(addChatMethod));
         Log.info("meth  player.sendChat  = " + Ref.describe(sendChatMethod));
@@ -149,10 +157,11 @@ public final class Mc {
         worldClass = notch.resolve(loader, "World");
         chatClass = notch.resolve(loader, "IChatComponent");
         chatTextClass = notch.resolve(loader, "ChatComponentText");
+        guiScreenClass = notch.resolve(loader, "GuiScreen");
 
         String[] keys = { "Minecraft", "EntityPlayerSP", "NetHandlerPlayClient", "NetworkPlayerInfo",
             "GuiIngame", "GuiPlayerTabOverlay", "Scoreboard", "ScoreObjective", "ScorePlayerTeam",
-            "Score", "World", "IChatComponent", "ChatComponentText" };
+            "Score", "World", "IChatComponent", "ChatComponentText", "GuiScreen" };
         if (!detailLogged) {
             for (String key : keys) {
                 Log.info("class " + key + " = " + notch.resolvedName(loader, key)
@@ -210,6 +219,15 @@ public final class Mc {
                 boardMapFields.add(Ref.accessible(f));
             }
             teamFormatMethod = Ref.method(teamClass, String.class, String.class);
+        }
+        if (guiScreenClass != null) {
+            displayScreenMethod = Ref.method(mcClass, guiScreenClass, void.class);
+            currentScreenField = Ref.fieldByType(mcClass, guiScreenClass, false);
+        }
+        if (guiClass != null) {
+            titleMethod = Ref.method(guiClass,
+                new Class<?>[] { String.class, String.class, int.class, int.class, int.class });
+            recordMethod = Ref.method(guiClass, String.class, boolean.class);
         }
         if (netClass != null && infoClass != null) {
             for (Field f : Ref.allFields(netClass)) {
@@ -338,6 +356,11 @@ public final class Mc {
         return Ref.getStatic(mcInstanceField);
     }
 
+    /** The loader the game classes came from; the menu must be defined against it. */
+    public ClassLoader gameLoader() {
+        return loader;
+    }
+
     public Object player() {
         Object mc = minecraft();
         return mc == null ? null : Ref.get(thePlayerField, mc);
@@ -350,6 +373,46 @@ public final class Mc {
 
     public boolean inWorld() {
         return player() != null && world() != null;
+    }
+
+    // ----------------------------------------------------------------- gui
+
+    /** True when the game is showing any screen (chat, inventory, menu, ...). */
+    public boolean screenOpen() {
+        Object mc = minecraft();
+        return mc != null && currentScreenField != null
+            && Ref.get(currentScreenField, mc) != null;
+    }
+
+    /**
+     * Hands the game a screen instance and shows it.
+     *
+     * <p>The instance comes from the separately compiled menu, which is why this
+     * takes {@code Object}: the loader has no compile-time GuiScreen.
+     */
+    public boolean displayScreen(Object screen) {
+        Object mc = minecraft();
+        if (mc == null || displayScreenMethod == null) return false;
+        return Ref.callVoid(displayScreenMethod, mc, screen);
+    }
+
+    public boolean screensSupported() {
+        return displayScreenMethod != null && currentScreenField != null;
+    }
+
+    /** Big centre-screen toast, the same overlay the game uses for records. */
+    public void title(String main, String sub) {
+        Object mc = minecraft();
+        if (mc == null || titleMethod == null) return;
+        Ref.callVoid(titleMethod, Ref.get(guiField, mc), main, sub,
+            Integer.valueOf(4), Integer.valueOf(40), Integer.valueOf(10));
+    }
+
+    /** Single-line overlay under the crosshair. */
+    public void record(String line) {
+        Object mc = minecraft();
+        if (mc == null || recordMethod == null) return;
+        Ref.callVoid(recordMethod, Ref.get(guiField, mc), line, Boolean.TRUE);
     }
 
     private Object netHandler() {

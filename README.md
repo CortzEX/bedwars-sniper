@@ -76,7 +76,9 @@ Artifacts → bedwars-sniper**. نفس الـ workflow بيبني `blsnip-loader
 - **Forge 1.8.9 عادي:** حط الـ jar في `%appdata%\.minecraft\mods\`
 - **Badlion:** الـ core client مش بيحمّل jars خارجية ولا فيه Forge runtime. شغّل
   `badlion/loader/blsnip-loader.jar` كـ `-javaagent` (`%JAVA_TOOL_OPTIONS%`) أو
-  احقنه بـ `badlion/native/inject.exe`. التفاصيل في `badlion/README.md`.
+  احقنه بـ `badlion/native/inject.exe`. بعد كده **F6** جوه اللعبة = قائمة تكتب فيها
+  اسم التارجت و `API key` وتشوف الـ `mode` + `map` كإشعار في الشات وتوست في نص
+  الشاشة. التفاصيل في `badlion/README.md`.
 - **Lunar:** نفس قاعدة Badlion.
 
 ---
