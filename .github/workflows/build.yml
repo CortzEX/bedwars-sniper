@@ -18,18 +18,14 @@ jobs:
           distribution: temurin
           java-version: "8"
 
-      # ForgeGradle 2.1 does not work above Gradle 3.x. The MDK ships 2.14.
-      - name: Install Gradle 2.14.1
-        run: |
-          curl -sSLo gradle.zip https://services.gradle.org/distributions/gradle-2.14.1-bin.zip
-          unzip -q gradle.zip
-          echo "$PWD/gradle-2.14.1/bin" >> "$GITHUB_PATH"
-
+      # Gradle comes from ./gradlew (pinned to 2.14.1, the last version that
+      # ForgeGradle 2.1 accepts). Only the JDK is provided by the runner.
       - name: Build
         id: build
         run: |
           set +e
-          gradle build --no-daemon --stacktrace > build.log 2>&1
+          chmod +x gradlew
+          ./gradlew build --no-daemon --stacktrace > build.log 2>&1
           rc=$?
           if [ $rc -ne 0 ]; then
             # Surface the real cause as check-run annotations, which are readable

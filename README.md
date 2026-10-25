@@ -52,14 +52,23 @@ gradlew.bat build
 
 الناتج: `build/libs/bedwars-sniper-1.2.0.jar`
 
-**لو الـ wrapper مش موجود** (لأنه مش مرفوع في الريبو):
+الـ wrapper موجود جوه الريبو (`gradlew`, `gradlew.bat`, `gradle/wrapper/`) ومثبّت
+على **Gradle 2.14.1** — أعلى نسخة يقبلها ForgeGradle 2.1. مش محتاج تنزّل Gradle
+خلاص، بس JDK 8.
 
-1. نزّل `forge-1.8.9-11.15.1.2318-1.8.9-mdk.zip` من
-   <https://files.minecraftforge.net/net/minecraftforge/forge/index_1.8.9.html>
-2. فك الضغط
-3. انسخ منه: `gradlew`, `gradlew.bat`, ومجلد `gradle/` كامل
-4. حطهم في جذر الريبو
-5. `gradlew.bat build`
+### لو الـ build وقع
+
+أول run بينزّل Minecraft + Forge + mappings (~200MB) وبيعمل decompile —
+محتاج **2GB رام فاضية على الأقل**. الرسالة `build daemon disappeared` معناها
+الرام خلصت، مش خطأ في الكود.
+
+```bash
+set GRADLE_OPTS=-Xmx2G
+gradlew.bat build --no-daemon
+```
+
+أو استخدم الـ CI: كل push على `main` بيبني الـ jar ويرفعه في **Actions → build →
+Artifacts → bedwars-sniper**.
 
 ### التركيب في اللعبة
 
@@ -212,6 +221,7 @@ bedwars-sniper/
 ├── build.gradle
 ├── settings.gradle
 ├── gradle.properties
+├── gradlew / gradlew.bat / gradle/wrapper/
 ├── tools/
 │   ├── snipe_engine.py
 │   ├── requirements.txt
