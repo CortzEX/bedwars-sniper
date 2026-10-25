@@ -49,6 +49,7 @@ public final class Mc {
     private Class<?> boardClass;
     private Class<?> objectiveClass;
     private Class<?> scoreClass;
+    private Class<?> teamClass;
     private Class<?> worldClass;
     private Class<?> chatClass;
     private Class<?> chatTextClass;
@@ -67,6 +68,7 @@ public final class Mc {
     private Method getObjectiveMethod;
     private Method getSortedScoresMethod;
     private Method scoreNameMethod;
+    private Method teamFormatMethod;
     private Method addChatMethod;
     private Method sendChatMethod;
     private Method textMethod;
@@ -81,17 +83,24 @@ public final class Mc {
     private final List<Field> infoMapCandidates = new ArrayList<Field>();
     private Field infoMapField;
 
+    private final List<Field> boardMapFields = new ArrayList<Field>();
+
     private String bindError = "not bound";
     private boolean bound;
     private boolean detailLogged;
 
     public Mc(ClassLoader loader) {
+        this(loader, new Notch());
+    }
+
+    public Mc(ClassLoader loader, Notch notch) {
         this.loader = loader;
-        this.notch = new Notch();
+        this.notch = notch;
     }
 
     /** Writes the resolved member table once; retries stay quiet. */
     private void logResolved() {
+        Log.info("methods on Minecraft    = " + Ref.allMethods(mcClass).size());
         Log.info("field mc.instance      = " + Ref.describe(mcInstanceField));
         Log.info("field thePlayer        = " + Ref.describe(thePlayerField));
         Log.info("field theWorld         = " + Ref.describe(theWorldField));
@@ -108,6 +117,8 @@ public final class Mc {
         Log.info("meth  objective(slot)  = " + Ref.describe(getObjectiveMethod));
         Log.info("meth  sortedScores     = " + Ref.describe(getSortedScoresMethod));
         Log.info("meth  score.name       = " + Ref.describe(scoreNameMethod));
+        Log.info("meth  team.format(name)= " + Ref.describe(teamFormatMethod));
+        Log.info("field board maps       = " + boardMapFields.size());
         Log.info("meth  player.addChat   = " + Ref.describe(addChatMethod));
         Log.info("meth  player.sendChat  = " + Ref.describe(sendChatMethod));
         Log.info("meth  profile          = " + Ref.describe(profileMethod));
@@ -134,13 +145,14 @@ public final class Mc {
         boardClass = notch.resolve(loader, "Scoreboard");
         objectiveClass = notch.resolve(loader, "ScoreObjective");
         scoreClass = notch.resolve(loader, "Score");
+        teamClass = notch.resolve(loader, "ScorePlayerTeam");
         worldClass = notch.resolve(loader, "World");
         chatClass = notch.resolve(loader, "IChatComponent");
         chatTextClass = notch.resolve(loader, "ChatComponentText");
 
         String[] keys = { "Minecraft", "EntityPlayerSP", "NetHandlerPlayClient", "NetworkPlayerInfo",
-            "GuiIngame", "GuiPlayerTabOverlay", "Scoreboard", "ScoreObjective", "Score", "World",
-            "IChatComponent", "ChatComponentText" };
+            "GuiIngame", "GuiPlayerTabOverlay", "Scoreboard", "ScoreObjective", "ScorePlayerTeam",
+            "Score", "World", "IChatComponent", "ChatComponentText" };
         if (!detailLogged) {
             for (String key : keys) {
                 Log.info("class " + key + " = " + notch.resolvedName(loader, key)
@@ -188,6 +200,16 @@ public final class Mc {
         if (scoreClass != null) {
             scoreNameMethod = Ref.getter(scoreClass, String.class);
             if (scoreNameMethod == null) scoreNameField = Ref.fieldByType(scoreClass, String.class, false);
+        }
+        if (boardClass != null && teamClass != null) {
+            // getPlayersTeam(String) shares its signature with getCreateTeam(String) and
+            // getTeam(String), which differ only in which internal map they read — and one
+            // of them creates a team as a side effect. Reading the maps directly avoids
+            // picking blind.
+            for (Field f : Ref.fieldsOfType(boardClass, Map.class, false)) {
+                boardMapFields.add(Ref.accessible(f));
+            }
+            teamFormatMethod = Ref.method(teamClass, String.class, String.class);
         }
         if (netClass != null && infoClass != null) {
             for (Field f : Ref.allFields(netClass)) {
@@ -412,11 +434,23 @@ public final class Mc {
     /** Sidebar lines, colour codes stripped and trimmed. */
     public List<String> sidebar() {
         List<String> out = new ArrayList<String>();
-        Object world = world();
-        if (world == null) return out;
+        for (String raw : sidebarRaw()) {
+            String line = strip(raw).trim();
+            if (!line.isEmpty()) out.add(line);
+        }
+        return out;
+    }
 
-        Object board = getBoardMethod != null ? Ref.call(getBoardMethod, world)
-            : Ref.get(boardField, world);
+    /**
+     * Sidebar lines exactly as the game holds them, colour codes intact.
+     *
+     * <p>Hypixel builds each line out of a score entry, and on some boards the entry
+     * is an invisible/placeholder token with the visible text in the team prefix.
+     * Comparing this against {@link #probe()} is how that gets diagnosed.
+     */
+    public List<String> sidebarRaw() {
+        List<String> out = new ArrayList<String>();
+        Object board = board();
         if (board == null) return out;
 
         Object objective = Ref.call(getObjectiveMethod, board, Integer.valueOf(SIDEBAR_SLOT));
@@ -430,10 +464,64 @@ public final class Mc {
             Object raw = scoreNameMethod != null ? Ref.call(scoreNameMethod, score)
                 : Ref.get(scoreNameField, score);
             if (!(raw instanceof String)) continue;
-            String line = strip((String) raw).trim();
-            if (!line.isEmpty()) out.add(line);
+            out.add(rendered(board, (String) raw));
         }
         return out;
+    }
+
+    /**
+     * The text the client actually draws for one score entry.
+     *
+     * <p>Vanilla renders a sidebar line as {@code team.formatString(entryName)}, where
+     * the entry name is only the invisible key and the visible text rides in the team
+     * prefix/suffix. Boards without a team render the entry name unchanged.
+     */
+    private String rendered(Object board, String entry) {
+        Object team = teamFor(board, entry);
+        if (team == null || teamFormatMethod == null) return entry;
+        Object formatted = Ref.call(teamFormatMethod, team, entry);
+        return formatted instanceof String ? (String) formatted : entry;
+    }
+
+    /** The team a score entry belongs to, or {@code null} when it has none. */
+    private Object teamFor(Object board, String entry) {
+        if (teamClass == null) return null;
+        for (int i = 0; i < boardMapFields.size(); i++) {
+            Object value = Ref.get(boardMapFields.get(i), board);
+            if (!(value instanceof Map)) continue;
+            Object team = ((Map<?, ?>) value).get(entry);
+            if (team != null && teamClass.isInstance(team)) return team;
+        }
+        return null;
+    }
+
+    private Object board() {
+        Object world = world();
+        if (world == null) return null;
+        return getBoardMethod != null ? Ref.call(getBoardMethod, world) : Ref.get(boardField, world);
+    }
+
+    /**
+     * Every zero-argument String getter on the sidebar objective, with its value.
+     *
+     * <p>Diagnostic only: 1.8.9 keeps the objective's name and display name in two
+     * same-typed getters with one-letter names, so the pair is dumped rather than
+     * guessed.
+     */
+    public String objectiveInfo() {
+        Object board = board();
+        if (board == null || objectiveClass == null) return "";
+        Object objective = Ref.call(getObjectiveMethod, board, Integer.valueOf(SIDEBAR_SLOT));
+        if (objective == null) return "";
+
+        StringBuilder sb = new StringBuilder();
+        for (Method m : Ref.allMethods(objectiveClass)) {
+            if (m.getParameterTypes().length != 0) continue;
+            if (m.getReturnType() != String.class) continue;
+            sb.append("  ").append(objectiveClass.getName()).append('#').append(m.getName())
+                .append("() = ").append(Ref.call(m, objective)).append('\n');
+        }
+        return sb.toString();
     }
 
     /**
@@ -575,8 +663,11 @@ public final class Mc {
         sb.append("server=").append(serverId()).append('\n');
         sb.append("mode=").append(modeName()).append('\n');
         sb.append("map=").append(mapName()).append('\n');
+        sb.append("objective:\n").append(objectiveInfo());
         sb.append("sidebar:\n");
         for (String line : sidebar()) sb.append("  |").append(line).append('\n');
+        sb.append("sidebarRaw:\n");
+        for (String line : sidebarRaw()) sb.append("  |").append(line).append('\n');
         List<String> tab = tabNames();
         sb.append("tab(").append(tab.size()).append("):\n");
         for (int i = 0; i < tab.size() && i < 80; i++) sb.append("  ").append(tab.get(i)).append('\n');

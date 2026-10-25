@@ -28,7 +28,10 @@ public final class Ref {
             Field[] declared;
             try {
                 declared = c.getDeclaredFields();
-            } catch (Throwable ignored) {
+            } catch (Throwable e) {
+                // A missing parameter type on any member aborts the whole enumeration.
+                Log.once("fields:" + c.getName(), "getDeclaredFields failed on " + c.getName()
+                    + ": " + e);
                 continue;
             }
             for (Field f : declared) {
@@ -45,7 +48,9 @@ public final class Ref {
             Method[] declared;
             try {
                 declared = c.getDeclaredMethods();
-            } catch (Throwable ignored) {
+            } catch (Throwable e) {
+                Log.once("methods:" + c.getName(), "getDeclaredMethods failed on " + c.getName()
+                    + ": " + e);
                 continue;
             }
             for (Method m : declared) {

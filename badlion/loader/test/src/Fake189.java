@@ -49,11 +49,17 @@ public final class Fake189 {
         auo board = new auo();
         board.objective = new auk();
         board.scores = new ArrayList<aum>();
-        for (String line : new String[] { "BED WARS", "Mode: Doubles", "Map: Aquarium", "Players: 8" }) {
+        for (String line : new String[] { "BED WARS", "Mode: Doubles", "Aquarium", "Players: 8" }) {
             aum score = new aum();
             score.name = line;
             board.scores.add(score);
         }
+        // Vanilla draws a sidebar line as team.formatString(entryName), so one entry is
+        // supplied the way Hypixel ships them: invisible-ish name, visible text in the
+        // team prefix. The loader has to render it instead of printing the raw name.
+        aul mapTeam = new aul();
+        mapTeam.prefix = "Map: ";
+        board.teamsByPlayer.put("Aquarium", mapTeam);
         adm world = new adm();
         world.board = board;
         mc.theWorld = world;
@@ -83,6 +89,7 @@ public final class Fake189 {
         check("tab count", state.contains("tab=2"));
 
         check("probe has sidebar", probe.contains("|Map: Aquarium"));
+        check("sidebar renders team prefix", !probe.contains("\n  |Aquarium\n"));
         check("probe has tab names", probe.contains("TargetPlayer1"));
         check("probe has header", probe.contains("mini42AB"));
 
@@ -222,12 +229,26 @@ class auo {
     auk objective;
     List<aum> scores;
 
+    /** player name -> team, the map the client uses when drawing a line. */
+    final Map<String, aul> teamsByPlayer = new HashMap<String, aul>();
+
     auk getObjectiveInDisplaySlot(int slot) {
         return objective;
     }
 
     java.util.Collection<aum> getSortedScores(auk objective) {
         return scores;
+    }
+}
+
+/** net.minecraft.scoreboard.ScorePlayerTeam */
+class aul {
+
+    String prefix = "";
+    String suffix = "";
+
+    String formatString(String name) {
+        return prefix + name + suffix;
     }
 }
 

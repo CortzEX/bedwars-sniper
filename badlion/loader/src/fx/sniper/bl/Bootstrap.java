@@ -133,6 +133,8 @@ public final class Bootstrap {
         private final Path statePath;
         private final Path probePath;
 
+        private final Notch notch = new Notch();
+
         private volatile Set<String> targets = Collections.emptySet();
         private volatile Cfg cfg = new Cfg();
 
@@ -256,7 +258,7 @@ public final class Bootstrap {
             bindAttempts++;
 
             if (mc == null) {
-                ClassLoader loader = findGameLoader();
+                ClassLoader loader = findGameLoader(notch);
                 if (loader == null) {
                     if (bindAttempts % 15 == 1) {
                         Log.info("waiting: Minecraft class not visible on any thread context loader");
@@ -264,7 +266,7 @@ public final class Bootstrap {
                     return;
                 }
                 Log.info("game class loader: " + loader.getClass().getName());
-                mc = new Mc(loader);
+                mc = new Mc(loader, notch);
             }
             if (mc.bind()) {
                 Log.info("bound after " + bindAttempts + " attempt(s)");
@@ -273,8 +275,7 @@ public final class Bootstrap {
             }
         }
 
-        private ClassLoader findGameLoader() {
-            Notch notch = new Notch();
+        private ClassLoader findGameLoader(Notch notch) {
             try {
                 for (Map.Entry<Thread, StackTraceElement[]> entry
                     : Thread.getAllStackTraces().entrySet()) {
@@ -346,8 +347,10 @@ public final class Bootstrap {
 
         private void onClientThread(Runnable task) {
             if (mc.schedule(task)) return;
-            // No scheduler (pre-1.8 client or a client that renamed it).
-            Log.once("schedule.missing", "no addScheduledTask — running game calls on the worker thread");
+            // 1.8.9 has no addScheduledTask, and its chat send only writes to the
+            // netty channel, which is thread-safe. Running inline is the normal path.
+            Log.once("schedule.direct",
+                "no client scheduler — chat packets queued straight from the worker");
             task.run();
         }
 

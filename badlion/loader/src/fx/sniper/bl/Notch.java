@@ -38,6 +38,7 @@ public final class Notch {
         put("GuiNewChat", "avt", "net.minecraft.client.gui.GuiNewChat");
         put("Scoreboard", "auo", "net.minecraft.scoreboard.Scoreboard");
         put("ScoreObjective", "auk", "net.minecraft.scoreboard.ScoreObjective");
+        put("ScorePlayerTeam", "aul", "net.minecraft.scoreboard.ScorePlayerTeam");
         put("Score", "aum", "net.minecraft.scoreboard.Score");
         put("World", "adm", "net.minecraft.world.World");
         put("IChatComponent", "eu", "net.minecraft.util.IChatComponent");
