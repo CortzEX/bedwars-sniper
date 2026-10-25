@@ -111,6 +111,31 @@ public final class Fake189 {
         check("join sent for target", player.sent.contains("/p join TargetPlayer1"));
         check("announced in chat", joined(player.chat).contains("TargetPlayer1"));
 
+        // Chat commands: the game appends every sent line to GuiNewChat before it
+        // leaves the client, so the loader reads commands with no hook at all.
+        gui.chat.sent.add("/blsnip target ChatTarget");
+        Thread.sleep(900);
+        check("chat target applied", read(dir.resolve("blsnip.properties"))
+            .contains("target=ChatTarget"));
+
+        gui.chat.sent.add("/blsnip queue on");
+        Thread.sleep(900);
+        check("chat queue toggled", read(dir.resolve("blsnip.properties"))
+            .contains("autoQueue=true"));
+
+        gui.chat.sent.add("/blsnip status");
+        Thread.sleep(900);
+        check("chat status replied", joined(player.chat).contains("in world"));
+
+        gui.chat.sent.add("/blsnip nonsense");
+        Thread.sleep(900);
+        check("chat unknown verb answered", joined(player.chat).contains("unknown"));
+
+        // An ordinary message must never be mistaken for a command.
+        gui.chat.sent.add("gg wp");
+        Thread.sleep(900);
+        check("plain chat ignored", !joined(player.chat).contains("unknown gg"));
+
         // A command outside the whitelist must never reach the server.
         write(dir.resolve("snipe_cmd.txt"), "/op me\n");
         Thread.sleep(900);
@@ -234,6 +259,7 @@ class bdc {
 class avo {
 
     awh tab;
+    avt chat = new avt();
 
     String titleMain;
     String titleSub;
@@ -241,6 +267,11 @@ class avo {
 
     awh getTabList() {
         return tab;
+    }
+
+    /** GuiIngame.getChatGUI */
+    avt d() {
+        return chat;
     }
 
     /** GuiIngame.displayTitle */
@@ -252,6 +283,19 @@ class avo {
     /** GuiIngame.setRecordPlaying */
     void a(String line, boolean aboveHotbar) {
         this.record = line;
+    }
+}
+
+/**
+ * net.minecraft.client.gui.GuiNewChat — the list vanilla appends every sent line to
+ * before it leaves the client. This is the loader's command channel.
+ */
+class avt {
+
+    final List<String> sent = new ArrayList<String>();
+
+    List<String> getSentMessages() {
+        return sent;
     }
 }
 

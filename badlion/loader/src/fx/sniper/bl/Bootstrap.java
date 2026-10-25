@@ -182,6 +182,9 @@ public final class Bootstrap {
         private String lastUiFile = "";
         private String lastUiStatus = "";
 
+        private String lastChat;
+        private boolean chatPrimed;
+
         Runner(Path dir) {
             this.dir = dir;
             this.targetsPath = dir.resolve("targets.txt");
@@ -225,6 +228,7 @@ public final class Bootstrap {
                 return;
             }
             pumpKey();
+            pumpChat();
             pumpBridge();
             pumpStatus();
             scan();
@@ -233,10 +237,145 @@ public final class Bootstrap {
             writeUiStatus();
         }
 
+        // ----------------------------------------------------------- chat
+
+        /**
+         * Chat commands, read from the list the game itself keeps of what the player
+         * sent. No hook, no keybinding, and it works while the hotkey does not.
+         *
+         * <p>{@code /blsnip help} lists the rest. Hypixel answers unknown commands
+         * with a line of its own; that is the only cost of this channel.
+         */
+        private void pumpChat() {
+            List<String> sent = mc.sentMessages();
+
+            if (!chatPrimed) {
+                // First look is the backlog: never replay old messages.
+                chatPrimed = true;
+                lastChat = sent.isEmpty() ? "" : sent.get(sent.size() - 1);
+                return;
+            }
+            if (sent.isEmpty()) return;
+
+            String newest = sent.get(sent.size() - 1);
+            if (newest.equals(lastChat)) return;
+            lastChat = newest;
+            handleCommand(newest);
+        }
+
+        private void handleCommand(String raw) {
+            String line = raw == null ? "" : raw.trim();
+            String prefix = "/blsnip";
+            if (line.length() < prefix.length()) return;
+            if (!line.regionMatches(true, 0, prefix, 0, prefix.length())) return;
+
+            String rest = line.substring(prefix.length()).trim();
+            String verb = rest;
+            String arg = "";
+            int space = rest.indexOf(' ');
+            if (space > 0) {
+                verb = rest.substring(0, space);
+                arg = rest.substring(space + 1).trim();
+            }
+            verb = verb.toLowerCase(Locale.ROOT);
+
+            if (verb.isEmpty() || "help".equals(verb)) {
+                announce("\u00a7b[blsnip] \u00a7f/blsnip target <name> \u00a77| \u00a7fkey <apiKey>");
+                announce("\u00a7b[blsnip] \u00a7fjoin on|off \u00a77| \u00a7fqueue on|off \u00a77| \u00a7fmenu");
+                announce("\u00a7b[blsnip] \u00a7fstatus \u00a77| \u00a7fclear");
+                return;
+            }
+
+            if ("target".equals(verb)) {
+                if (arg.isEmpty()) {
+                    announce("\u00a7b[blsnip] \u00a7ftarget is \u00a7e"
+                        + (Ui.target.isEmpty() ? "unset" : Ui.target));
+                    return;
+                }
+                if (!arg.matches("[A-Za-z0-9_]{1,16}")) {
+                    announce("\u00a7c[blsnip] \u00a7ftarget must be 1-16 letters, digits or _");
+                    return;
+                }
+                applyUi(arg, Ui.apiKey, Ui.partyJoin, Ui.autoQueue);
+                announce("\u00a7a[blsnip] \u00a7ftarget \u2192 \u00a7e" + arg);
+                return;
+            }
+
+            if ("key".equals(verb)) {
+                if (arg.isEmpty()) {
+                    announce("\u00a7b[blsnip] \u00a7fkey is \u00a7e"
+                        + (Ui.apiKey.isEmpty() ? "unset (tab list only)" : "set"));
+                    return;
+                }
+                if (!arg.matches("[A-Za-z0-9-]{8,36}")) {
+                    announce("\u00a7c[blsnip] \u00a7fkey looks wrong \u2014 copy it whole");
+                    return;
+                }
+                applyUi(Ui.target, arg, Ui.partyJoin, Ui.autoQueue);
+                announce("\u00a7a[blsnip] \u00a7fapi key saved \u2014 status polling on");
+                return;
+            }
+
+            if ("join".equals(verb) || "queue".equals(verb)) {
+                String value = arg.toLowerCase(Locale.ROOT);
+                if (!(value.equals("on") || value.equals("off")
+                    || value.equals("true") || value.equals("false"))) {
+                    announce("\u00a7c[blsnip] \u00a7fuse \u00a7e" + verb + " on\u00a7f/\u00a7eoff");
+                    return;
+                }
+                boolean on = onOff(value);
+                if ("join".equals(verb)) {
+                    applyUi(Ui.target, Ui.apiKey, on, Ui.autoQueue);
+                } else {
+                    applyUi(Ui.target, Ui.apiKey, Ui.partyJoin, on);
+                }
+                announce("\u00a7a[blsnip] \u00a7f" + verb + " " + (on ? "on" : "off"));
+                return;
+            }
+
+            if ("menu".equals(verb)) {
+                openMenu();
+                return;
+            }
+
+            if ("clear".equals(verb)) {
+                applyUi("", Ui.apiKey, Ui.partyJoin, Ui.autoQueue);
+                announce("\u00a7a[blsnip] \u00a7ftarget cleared");
+                return;
+            }
+
+            if ("status".equals(verb)) {
+                Snapshot s = snap;
+                announce("\u00a7b[blsnip] \u00a7f" + (s.inWorld ? "in world" : "no world")
+                    + "\u00a77 | server \u00a7f" + orDash(s.server)
+                    + "\u00a77 | mode \u00a7f" + orDash(s.mode)
+                    + "\u00a77 | map \u00a7f" + orDash(s.map)
+                    + "\u00a77 | seen \u00a7f" + (s.seen.isEmpty() ? "none" : s.seen));
+                if (!Ui.apiKey.isEmpty() && !Ui.target.isEmpty()) {
+                    nextStatusAt = 0L;
+                }
+                return;
+            }
+
+            announce("\u00a7c[blsnip] \u00a7funknown \u00a7e" + verb + "\u00a7f \u2014 try \u00a7e/blsnip help");
+        }
+
+        private static boolean onOff(String arg) {
+            if (arg.equalsIgnoreCase("on") || arg.equalsIgnoreCase("true")
+                || arg.equalsIgnoreCase("1") || arg.equalsIgnoreCase("yes")) {
+                return true;
+            }
+            return false;
+        }
+
+        private static String orDash(String value) {
+            return value == null || value.isEmpty() ? "-" : value;
+        }
+
         // ----------------------------------------------------------- menu
 
         private void pumpKey() {
-            boolean down = Keys.held(Keys.F6);
+            boolean down = Keys.held(Keys.F6, mc.gameLoader());
             if (down && !f6Down) {
                 long now = System.currentTimeMillis();
                 if (now - lastMenuAt > 500L) {

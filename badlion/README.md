@@ -101,13 +101,35 @@ C:\blsnip\
   يمسح الكومنتات) ويكمّل **من غير restart**.
 - كل إشعار بيطلع **جوه الشات + توست في نص الشاشة** (`displayTitle`)، فمش لازم تبص
   على اللوج.
+- الهوت كي بيتقرا من LWJGL بالـ class loader بتاع اللعبة (مش بتاع الـ agent)، ولو
+  كلاس LWJGL مش موجود أصلاً بيقول في اللوج ويقفل بزراير الشات على طول.
 
 القائمة مبنية على `GuiScreen` الحقيقي (`axu` في 1.8.9)، عشان كده كلاسها في الـ
 default package ومترجم على stubs من `screen/stubs` — الـ stubs دي مش بتتحط في الـ
 jar، الـ JVM بيربط الكلاسات بالاسم والشكل وقت التشغيل.
 
-### مسار الـ API (لما التارجت قافل الـ API)
+## أوامر الشات — `/blsnip` (شغّالة من غير هوت كي)
 
+اكتب في الشات:
+
+| الأمر | إيه بيعمل |
+|---|---|
+| `/blsnip help` | قائمة الأوامر |
+| `/blsnip target <name>` | يحدد التارجت ويحفظه |
+| `/blsnip key <apiKey>` | يحفظ المفتاح ويشغّل الـ status polling |
+| `/blsnip join on\|off` | `/p join` أول ما يظهر |
+| `/blsnip queue on\|off` | `/play bedwars_<mode>` بعد الإشعار |
+| `/blsnip menu` | يفتح شاشة F6 |
+| `/blsnip status` | يقولك `server / mode / map / seen` في الشات |
+| `/blsnip clear` | يشيل التارجت |
+
+إزاي بيلقطها من غير hook: اللعبة نفسها (`GuiNewChat`) بتضيف كل سطر بيتبعت في
+ليستة `sentMessages` **قبل** ما يخرج من الكلاينت، والـ loader بيقرا آخر سطر منها كل
+`pollMs`. مفيش حقن، مفيش keybinding، ومفيش خطر إن أمر يفوت.
+
+ثمنها الوحيد: Hypixel بيرد على `/blsnip` بـ `Unknown command` — سطر واحد عادي.
+
+## مسار الـ API (لما التارجت قافل الـ API)
 `apiKey` + `target` = كل `statusSeconds` ثانية الـ loader بيسأل:
 
 1. Mojang `users/profiles/minecraft/<name>` → UUID (بيتخزن مؤقتًا، مش بيتغير).

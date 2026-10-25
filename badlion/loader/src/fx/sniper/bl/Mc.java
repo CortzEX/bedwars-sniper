@@ -54,6 +54,7 @@ public final class Mc {
     private Class<?> chatClass;
     private Class<?> chatTextClass;
     private Class<?> guiScreenClass;
+    private Class<?> chatGuiClass;
 
     private Field mcInstanceField;
     private Field thePlayerField;
@@ -78,6 +79,9 @@ public final class Mc {
     private Method displayScreenMethod;
     private Method titleMethod;
     private Method recordMethod;
+    private Method getChatGuiMethod;
+    private Method sentMessagesMethod;
+    private Field sentMessagesField;
 
     private Constructor<?> chatTextCtor;
 
@@ -126,6 +130,9 @@ public final class Mc {
         Log.info("meth  displayScreen    = " + Ref.describe(displayScreenMethod));
         Log.info("meth  title            = " + Ref.describe(titleMethod));
         Log.info("field currentScreen    = " + Ref.describe(currentScreenField));
+        Log.info("meth  getChatGui       = " + Ref.describe(getChatGuiMethod));
+        Log.info("meth  sentMessages     = " + (sentMessagesMethod != null
+            ? Ref.describe(sentMessagesMethod) : Ref.describe(sentMessagesField)));
         Log.info("field board maps       = " + boardMapFields.size());
         Log.info("meth  player.addChat   = " + Ref.describe(addChatMethod));
         Log.info("meth  player.sendChat  = " + Ref.describe(sendChatMethod));
@@ -158,10 +165,11 @@ public final class Mc {
         chatClass = notch.resolve(loader, "IChatComponent");
         chatTextClass = notch.resolve(loader, "ChatComponentText");
         guiScreenClass = notch.resolve(loader, "GuiScreen");
+        chatGuiClass = notch.resolve(loader, "GuiNewChat");
 
         String[] keys = { "Minecraft", "EntityPlayerSP", "NetHandlerPlayClient", "NetworkPlayerInfo",
             "GuiIngame", "GuiPlayerTabOverlay", "Scoreboard", "ScoreObjective", "ScorePlayerTeam",
-            "Score", "World", "IChatComponent", "ChatComponentText", "GuiScreen" };
+            "Score", "World", "IChatComponent", "ChatComponentText", "GuiScreen", "GuiNewChat" };
         if (!detailLogged) {
             for (String key : keys) {
                 Log.info("class " + key + " = " + notch.resolvedName(loader, key)
@@ -228,6 +236,17 @@ public final class Mc {
             titleMethod = Ref.method(guiClass,
                 new Class<?>[] { String.class, String.class, int.class, int.class, int.class });
             recordMethod = Ref.method(guiClass, String.class, boolean.class);
+        }
+        if (guiClass != null && chatGuiClass != null) {
+            getChatGuiMethod = Ref.getter(guiClass, chatGuiClass);
+        }
+        if (chatGuiClass != null) {
+            // GuiNewChat.getSentMessages() -> List, appended to by the chat screen itself
+            // before the message leaves the client. That is the whole command channel.
+            sentMessagesMethod = Ref.getter(chatGuiClass, List.class);
+            if (sentMessagesMethod == null) {
+                sentMessagesField = Ref.fieldByType(chatGuiClass, List.class, false);
+            }
         }
         if (netClass != null && infoClass != null) {
             for (Field f : Ref.allFields(netClass)) {
@@ -713,6 +732,41 @@ public final class Mc {
         Object player = player();
         if (player == null || sendChatMethod == null) return false;
         return Ref.callVoid(sendChatMethod, player, command);
+    }
+
+    /**
+     * Recent messages the player sent, oldest first — the game itself appends every
+     * sent line to this list before it leaves the client, so no hook is needed.
+     *
+     * <p>Read from the worker thread while the client may append: a failed read is
+     * an empty list, never a crash.
+     */
+    public List<String> sentMessages() {
+        if (getChatGuiMethod == null) return java.util.Collections.emptyList();
+        Object mc = minecraft();
+        if (mc == null) return java.util.Collections.emptyList();
+        Object gui = Ref.get(guiField, mc);
+        if (gui == null) return java.util.Collections.emptyList();
+        Object chat = Ref.call(getChatGuiMethod, gui);
+        if (chat == null) return java.util.Collections.emptyList();
+
+        Object raw = sentMessagesMethod != null
+            ? Ref.call(sentMessagesMethod, chat)
+            : Ref.get(sentMessagesField, chat);
+        if (!(raw instanceof List)) return java.util.Collections.emptyList();
+
+        List<String> out = new ArrayList<String>();
+        try {
+            List<?> list = (List<?>) raw;
+            int size = list.size();
+            for (int i = Math.max(0, size - 40); i < size; i++) {
+                Object value = list.get(i);
+                if (value instanceof String) out.add((String) value);
+            }
+        } catch (Throwable e) {
+            return java.util.Collections.emptyList();
+        }
+        return out;
     }
 
     // --------------------------------------------------------------- probe
