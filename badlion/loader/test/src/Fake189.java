@@ -137,6 +137,19 @@ public final class Fake189 {
         check("chat diag dumped", diag.contains("lastAction="));
         check("chat diag has sidebar", diag.contains("side="));
         check("chat diag saw chat send", diag.contains("canSendChat=true"));
+        // The same command twice must run twice: the sent list is append-only, so
+        // an identical tail is not "nothing new".
+        player.chat.clear();
+        gui.chat.sent.add("/blsnip status");
+        Thread.sleep(900);
+        gui.chat.sent.add("/blsnip status");
+        Thread.sleep(900);
+        int statusReplies = 0;
+        for (String line : player.chat) {
+            if (line.contains("in world")) statusReplies++;
+        }
+        check("repeat command runs twice", statusReplies >= 2);
+
         // An ordinary message must never be mistaken for a command.
         gui.chat.sent.add("gg wp");
         Thread.sleep(900);

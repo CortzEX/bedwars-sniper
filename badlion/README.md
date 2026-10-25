@@ -121,13 +121,48 @@ jar، الـ JVM بيربط الكلاسات بالاسم والشكل وقت ا
 | `/blsnip queue on\|off` | `/play bedwars_<mode>` بعد الإشعار |
 | `/blsnip menu` | يفتح شاشة F6 |
 | `/blsnip status` | يقولك `server / mode / map / seen` + آخر حركة اتعملت |
-| `/blsnip diag` | تقرير كامل للشات + `diag.txt` (لو حاجة مش شغالة) || `/blsnip clear` | يشيل التارجت |
+| `/blsnip diag` | تقرير كامل للشات + `diag.txt` (لو حاجة مش شغالة) |
+| `/blsnip clear` | يشيل التارجت |
 
 إزاي بيلقطها من غير hook: اللعبة نفسها (`GuiNewChat`) بتضيف كل سطر بيتبعت في
 ليستة `sentMessages` **قبل** ما يخرج من الكلاينت، والـ loader بيقرا آخر سطر منها كل
 `pollMs`. مفيش حقن، مفيش keybinding، ومفيش خطر إن أمر يفوت.
 
+الأوامر المتكررة بتشتغل برضه: المقارنة على بصمة آخر 4 سطور مش على آخر سطر لوحده،
+فـ `/blsnip status` مرتين ورا بعض بيرد مرتين.
+
 ثمنها الوحيد: Hypixel بيرد على `/blsnip` بـ `Unknown command` — سطر واحد عادي.
+
+## ثلاث قنوات — لو واحدة سكتت
+
+| القناة | إزاي | امتى تستخدمها |
+|---|---|---|
+| الشات | `/blsnip ...` | الأسهل، وبتشتغل جوه اللعبة |
+| الملف + `snip.bat` | `snip target 2Dance` من CMD | لو الشات مش بيرد خالص |
+| القائمة | F6 | تعديل بالإيد |
+
+`snip.bat` + `snip.ps1` (حطهم جنب الـ jar):
+
+```bat
+snip target 2Dance
+snip key 2ce32425-....
+snip queue on
+snip join off
+snip clear
+snip show
+```
+
+بيكتبوا في `blsnip.properties` مباشرة (سطر واحد، والتعليقات بتفضل)، والـ loader
+بيعيد قراءة الملف كل `pollMs` — يعني التغيير بيلزم واللعبة شغالة، من غير أي قناة
+جوه اللعبة.
+
+**دليل إن الـ loader عايش:** أول ما يتربط باللعبة بيبعت سطر:
+
+```
+[blsnip] armed — target 2Dance | join on | queue on | key set
+```
+
+لو السطر ده مش ظاهر يبقى الـ loader مش متحمل من الأساس، مش الأوامر اللي بايظة.
 
 ## مسار الـ API (لما التارجت قافل الـ API)
 `apiKey` + `target` = كل `statusSeconds` ثانية الـ loader بيسأل:

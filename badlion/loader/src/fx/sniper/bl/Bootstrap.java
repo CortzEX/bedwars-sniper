@@ -189,8 +189,9 @@ public final class Bootstrap {
         private String lastUiFile = "";
         private String lastUiStatus = "";
 
-        private String lastChat;
         private boolean chatPrimed;
+        private int chatSize;
+        private int chatSignature;
 
         Runner(Path dir) {
             this.dir = dir;
@@ -252,22 +253,50 @@ public final class Bootstrap {
          *
          * <p>{@code /blsnip help} lists the rest. Hypixel answers unknown commands
          * with a line of its own; that is the only cost of this channel.
+         *
+         * <p>Change is detected on a signature over the last few lines, not on the
+         * last line alone: the list is append-only, so typing the same command twice
+         * leaves an identical tail and a tail comparison would swallow the second
+         * one. A shifted window is enough to see it.
          */
         private void pumpChat() {
             List<String> sent = mc.sentMessages();
+            if (sent.isEmpty()) {
+                chatPrimed = true;
+                return;
+            }
 
+            int size = sent.size();
+            int sig = signature(sent);
             if (!chatPrimed) {
                 // First look is the backlog: never replay old messages.
                 chatPrimed = true;
-                lastChat = sent.isEmpty() ? "" : sent.get(sent.size() - 1);
+                chatSize = size;
+                chatSignature = sig;
                 return;
             }
-            if (sent.isEmpty()) return;
+            if (sig == chatSignature) return;
 
-            String newest = sent.get(sent.size() - 1);
-            if (newest.equals(lastChat)) return;
-            lastChat = newest;
-            handleCommand(newest);
+            // Everything appended since the last poll, oldest first — two commands
+            // typed inside one poll window both run.
+            int from = size > chatSize ? chatSize : size - 1;
+            chatSize = size;
+            chatSignature = sig;
+
+            for (int i = Math.max(0, from); i < size; i++) {
+                handleCommand(sent.get(i));
+            }
+        }
+
+        /** Rolling hash over the tail of the sent list; cheap and shift-sensitive. */
+        private static int signature(List<String> sent) {
+            int hash = 17;
+            int from = Math.max(0, sent.size() - 4);
+            for (int i = from; i < sent.size(); i++) {
+                String line = sent.get(i);
+                hash = hash * 31 + (line == null ? 0 : line.hashCode());
+            }
+            return hash * 31 + sent.size();
         }
 
         private void handleCommand(String raw) {
@@ -734,7 +763,24 @@ public final class Bootstrap {
                 Log.info("bound after " + bindAttempts + " attempt(s)");
                 announce("\u00a7a[blsnip] \u00a7fready \u2014 \u00a7e" + targets.size()
                     + "\u00a7f target(s)");
+                announceArm();
             }
+        }
+
+        /**
+         * Proof of life on bind: what {@code blsnip.properties} already armed.
+         *
+         * <p>Nothing has to be typed to see the loader is alive — the line says what
+         * it is watching and which actions are switched on.
+         */
+        private void announceArm() {
+            String target = Ui.target.trim();
+            StringBuilder sb = new StringBuilder("\u00a7a[blsnip] \u00a7farmed \u2014 target \u00a7e");
+            sb.append(target.isEmpty() ? "none" : target);
+            sb.append("\u00a77 | join \u00a7f").append(cfg.autoJoin ? "on" : "off");
+            sb.append("\u00a77 | queue \u00a7f").append(cfg.autoQueue ? "on" : "off");
+            sb.append("\u00a77 | key \u00a7f").append(Ui.apiKey.isEmpty() ? "none" : "set");
+            announce(sb.toString());
         }
 
         private ClassLoader findGameLoader(Notch notch) {
