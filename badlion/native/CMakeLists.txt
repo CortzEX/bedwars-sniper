@@ -15,13 +15,13 @@ if(NOT JAVA_HOME OR NOT EXISTS "${JAVA_HOME}/include/jni.h")
     "Pass -DJAVA_HOME=C:/path/to/jdk8 or set the environment variable.")
 endif()
 
-add_library(blagent SHARED src/Agent.cpp)
+add_library(blagent SHARED Agent.cpp)
 target_include_directories(blagent PRIVATE
   "${JAVA_HOME}/include"
   "${JAVA_HOME}/include/win32")
 target_compile_options(blagent PRIVATE /W4 /permissive-)
 
-add_executable(inject src/Injector.cpp)
+add_executable(inject Injector.cpp)
 target_compile_options(inject PRIVATE /W4 /permissive-)
 # NtQueryInformationProcess / NtCreateThreadEx come from ntdll's import lib.
 target_link_libraries(inject PRIVATE ntdll)
