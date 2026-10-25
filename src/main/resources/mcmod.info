@@ -1,0 +1,17 @@
+[
+{
+  "modid": "bedwarssniper",
+  "name": "Bedwars Sniper",
+  "description": "Tab-list target detection, scoreboard location readout and a file bridge for an external snipe engine.",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["CortzEX"],
+  "credits": "",
+  "logoFile": "",
+  "screenshots": [],
+  "parent": "",
+  "useDependencyInformation": false
+}
+]

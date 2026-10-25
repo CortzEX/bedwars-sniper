@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+out/
+run/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+
+# Minecraft dev artifacts
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Local runtime files (never commit: they contain targets and keys)
+snipe_cmd.txt
+snipe_cmd.tmp
+bedwars-sniper.json
+auth-cache/
+
+# OS
+Thumbs.db
+.DS_Store
