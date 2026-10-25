@@ -120,8 +120,8 @@ jar، الـ JVM بيربط الكلاسات بالاسم والشكل وقت ا
 | `/blsnip join on\|off` | `/p join` أول ما يظهر |
 | `/blsnip queue on\|off` | `/play bedwars_<mode>` بعد الإشعار |
 | `/blsnip menu` | يفتح شاشة F6 |
-| `/blsnip status` | يقولك `server / mode / map / seen` في الشات |
-| `/blsnip clear` | يشيل التارجت |
+| `/blsnip status` | يقولك `server / mode / map / seen` + آخر حركة اتعملت |
+| `/blsnip diag` | تقرير كامل للشات + `diag.txt` (لو حاجة مش شغالة) || `/blsnip clear` | يشيل التارجت |
 
 إزاي بيلقطها من غير hook: اللعبة نفسها (`GuiNewChat`) بتضيف كل سطر بيتبعت في
 ليستة `sentMessages` **قبل** ما يخرج من الكلاينت، والـ loader بيقرا آخر سطر منها كل
@@ -187,6 +187,10 @@ run.bat
   مفيش أي حاجة بتلمس الـ packets في اتجاه السيرفر غير الشات العادي.
 - **مفيش طريقة تدخل ماتش شغّالة.** اللي متاح: `/p join` لو البارتي مفتوح، أو نفس
   الـ queue في نفس الوقت. `/rejoin` بيرجّعك لماتشك إنت، مش لماتش حد تاني.
+- **"مش بيظبط" بتتقرا من `diag.txt`.** `/blsnip diag` بيكتب: `canSendChat` (لو
+  `false` يبقى `sendChatMessage` مش متحل)، `sidebarLines` (لو 0 يبقى مفيش سكوربورد)،
+  `apiMode` (لو `-` يبقى المفتاح/الـ polling مش شغال)، و`lastAction` (آخر قرار
+  اتاخد حرفياً: `sent /p join X` / `saw X in tab, join off` / `/P JOIN FAILED X`).
 
 ## الملفات
 

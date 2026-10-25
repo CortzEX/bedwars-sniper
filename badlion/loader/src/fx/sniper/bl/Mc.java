@@ -734,6 +734,11 @@ public final class Mc {
         return Ref.callVoid(sendChatMethod, player, command);
     }
 
+    /** True once both the player and {@code sendChat} resolved — a false send is not a silent one. */
+    public boolean canSendChat() {
+        return sendChatMethod != null && player() != null;
+    }
+
     /**
      * Recent messages the player sent, oldest first — the game itself appends every
      * sent line to this list before it leaves the client, so no hook is needed.

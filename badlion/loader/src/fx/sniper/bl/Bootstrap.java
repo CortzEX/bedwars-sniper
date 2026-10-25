@@ -137,6 +137,7 @@ public final class Bootstrap {
         private final Path probePath;
         private final Path uiPath;
         private final Path uiStatusPath;
+        private final Path diagPath;
 
         private final Notch notch = new Notch();
 
@@ -178,6 +179,12 @@ public final class Bootstrap {
         private String lastStatusKey;
         private String lastQueued;
 
+        /** What the last attempt actually did — the only way to tell "fired" from "silently skipped". */
+        private volatile String lastAction = "none yet";
+        private volatile String lastApiMode;
+        private volatile String lastApiMap;
+        private volatile String lastApiCmd;
+
         private long uiStamp;
         private String lastUiFile = "";
         private String lastUiStatus = "";
@@ -194,7 +201,7 @@ public final class Bootstrap {
             this.probePath = dir.resolve("probe.txt");
             this.uiPath = dir.resolve("snipe_ui.txt");
             this.uiStatusPath = dir.resolve("ui_status.txt");
-            // The menu is compiled without any loader type, so the two sides meet on
+            this.diagPath = dir.resolve("diag.txt");            // The menu is compiled without any loader type, so the two sides meet on
             // this property: the menu reads and writes plain files in this directory.
             System.setProperty("blsnip.dir", dir.toString());
         }
@@ -282,7 +289,7 @@ public final class Bootstrap {
             if (verb.isEmpty() || "help".equals(verb)) {
                 announce("\u00a7b[blsnip] \u00a7f/blsnip target <name> \u00a77| \u00a7fkey <apiKey>");
                 announce("\u00a7b[blsnip] \u00a7fjoin on|off \u00a77| \u00a7fqueue on|off \u00a77| \u00a7fmenu");
-                announce("\u00a7b[blsnip] \u00a7fstatus \u00a77| \u00a7fclear");
+                announce("\u00a7b[blsnip] \u00a7fstatus \u00a77| \u00a7fdiag \u00a77| \u00a7fclear");
                 return;
             }
 
@@ -344,6 +351,11 @@ public final class Bootstrap {
                 return;
             }
 
+            if ("diag".equals(verb)) {
+                diag();
+                return;
+            }
+
             if ("status".equals(verb)) {
                 Snapshot s = snap;
                 announce("\u00a7b[blsnip] \u00a7f" + (s.inWorld ? "in world" : "no world")
@@ -351,6 +363,7 @@ public final class Bootstrap {
                     + "\u00a77 | mode \u00a7f" + orDash(s.mode)
                     + "\u00a77 | map \u00a7f" + orDash(s.map)
                     + "\u00a77 | seen \u00a7f" + (s.seen.isEmpty() ? "none" : s.seen));
+                announce("\u00a7b[blsnip] \u00a7flast \u00a7f" + lastAction);
                 if (!Ui.apiKey.isEmpty() && !Ui.target.isEmpty()) {
                     nextStatusAt = 0L;
                 }
@@ -360,8 +373,60 @@ public final class Bootstrap {
             announce("\u00a7c[blsnip] \u00a7funknown \u00a7e" + verb + "\u00a7f \u2014 try \u00a7e/blsnip help");
         }
 
-        private static boolean onOff(String arg) {
-            if (arg.equalsIgnoreCase("on") || arg.equalsIgnoreCase("true")
+        /**
+         * Everything one attempt depends on, in one place.
+         *
+         * <p>"It did not work" is almost always one of five things: no world yet, the
+         * scoreboard holding no {@code mode}/{@code map} line, the target never
+         * appearing in the tab list, the API never answering, or a chat send that
+         * returned false. Each gets a line, and the full dump lands in {@code diag.txt}.
+         */
+        private void diag() {
+            Snapshot s = snap;
+            List<String> sidebar = mc.sidebar();
+            List<String> tab = mc.tabNames();
+            boolean canSend = mc.canSendChat();
+
+            StringBuilder file = new StringBuilder();
+            file.append("bound=").append(mc.isBound()).append('\n');
+            file.append("inWorld=").append(s.inWorld).append('\n');
+            file.append("canSendChat=").append(canSend).append('\n');
+            file.append("server=").append(orDash(s.server)).append('\n');
+            file.append("mode=").append(orDash(s.mode)).append('\n');
+            file.append("map=").append(orDash(s.map)).append('\n');
+            file.append("header=").append(s.header).append('\n');
+            file.append("footer=").append(s.footer).append('\n');
+            file.append("apiMode=").append(orDash(lastApiMode)).append('\n');
+            file.append("apiMap=").append(orDash(lastApiMap)).append('\n');
+            file.append("apiCmd=").append(orDash(lastApiCmd)).append('\n');
+            file.append("target=").append(Ui.target).append('\n');
+            file.append("autoJoin=").append(cfg.autoJoin).append('\n');
+            file.append("autoQueue=").append(cfg.autoQueue).append('\n');
+            file.append("queueCommand=").append(cfg.queueCommand).append('\n');
+            file.append("lastAction=").append(lastAction).append('\n');
+            file.append("sidebarLines=").append(sidebar.size()).append('\n');
+            int shown = 0;
+            for (String line : sidebar) {
+                if (shown++ >= 24) break;
+                file.append("  side=").append(line).append('\n');
+            }
+            file.append("tabCount=").append(tab.size()).append('\n');
+            file.append("tab=").append(tab).append('\n');
+            writeFile(diagPath, file.toString());
+
+            announce("\u00a7b[blsnip] \u00a7fworld \u00a7e" + s.inWorld
+                + "\u00a77 | send \u00a7e" + canSend
+                + "\u00a77 | side \u00a7e" + sidebar.size()
+                + "\u00a77 | tab \u00a7e" + tab.size());
+            announce("\u00a7b[blsnip] \u00a7fserver \u00a7e" + orDash(s.server)
+                + "\u00a77 | mode \u00a7e" + orDash(s.mode)
+                + "\u00a77 | map \u00a7e" + orDash(s.map)
+                + "\u00a77 | api \u00a7e" + orDash(lastApiMode));
+            announce("\u00a7b[blsnip] \u00a7flast \u00a7e" + lastAction);
+            announce("\u00a7b[blsnip] \u00a7ffull dump \u2192 \u00a7ediag.txt");
+        }
+
+        private static boolean onOff(String arg) {            if (arg.equalsIgnoreCase("on") || arg.equalsIgnoreCase("true")
                 || arg.equalsIgnoreCase("1") || arg.equalsIgnoreCase("yes")) {
                 return true;
             }
@@ -553,16 +618,29 @@ public final class Bootstrap {
             Ui.status(name + ": " + result.mode + " / " + result.map);
             if (key.equals(lastStatusKey)) return;
             lastStatusKey = key;
+            lastApiMode = result.mode;
+            lastApiMap = result.map;
+            lastApiCmd = result.queueCommand();
 
             notify("\u00a7b[snip] \u00a7f" + name + " \u00a77\u2192 \u00a7e" + result.mode
                 + " \u00a77(" + result.map + ")", name + " - " + result.mode + " - " + result.map);
 
-            if (!cfg.autoQueue) return;
-            String command = result.queueCommand();
-            if (command == null || command.equals(lastQueued)) return;
+            if (!cfg.autoQueue) {
+                lastAction = "api saw " + result.mode + "/" + result.map + ", queue off";
+                return;
+            }
+            String command = lastApiCmd;
+            if (command == null || command.isEmpty()) {                lastAction = "api saw " + result.mode + ", no queue command";
+                return;
+            }
+            if (command.equals(lastQueued)) {
+                lastAction = "already queued /" + command;
+                return;
+            }
             lastQueued = command;
-            mc.sendChat("/" + command);
-            Log.info("queued: /" + command);
+            boolean sent = mc.sendChat("/" + command);
+            lastAction = (sent ? "queued /" : "QUEUE FAILED /") + command;
+            Log.info("queued: /" + command + " sent=" + sent);
         }
 
         // -------------------------------------------------------- files
@@ -846,11 +924,22 @@ public final class Bootstrap {
 
             announce("\u00a7a[snip] \u00a7f" + name + " \u00a77(" + (used + 1) + "/"
                 + cfg.maxPerTarget + ")");
-            if (!cfg.autoJoin) return;
+            if (!cfg.autoJoin) {
+                lastAction = "saw " + name + " in tab, join off";
+                return;
+            }
 
-            mc.sendChat("/p join " + name);
-            if (cfg.autoQueue && cfg.queueCommand != null && !cfg.queueCommand.isEmpty()) {
-                mc.sendChat("/" + stripSlash(cfg.queueCommand));
+            boolean joined = mc.sendChat("/p join " + name);
+            lastAction = (joined ? "sent /p join " : "/P JOIN FAILED ") + name;
+            Log.info(lastAction);
+
+            if (cfg.autoQueue) {
+                String command = lastApiCmd;
+                if (command != null && !command.isEmpty()) {
+                    boolean queued = mc.sendChat("/" + command);
+                    lastAction = lastAction + (queued ? " + /" : " + QUEUE FAILED /") + command;
+                    Log.info("queue " + command + " sent=" + queued);
+                }
             }
         }
 

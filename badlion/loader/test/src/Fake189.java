@@ -131,6 +131,12 @@ public final class Fake189 {
         Thread.sleep(900);
         check("chat unknown verb answered", joined(player.chat).contains("unknown"));
 
+        gui.chat.sent.add("/blsnip diag");
+        Thread.sleep(1200);
+        String diag = read(dir.resolve("diag.txt"));
+        check("chat diag dumped", diag.contains("lastAction="));
+        check("chat diag has sidebar", diag.contains("side="));
+        check("chat diag saw chat send", diag.contains("canSendChat=true"));
         // An ordinary message must never be mistaken for a command.
         gui.chat.sent.add("gg wp");
         Thread.sleep(900);
