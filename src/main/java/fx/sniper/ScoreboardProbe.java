@@ -7,6 +7,7 @@ import net.minecraft.scoreboard.ScoreObjective;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.util.IChatComponent;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,18 +17,19 @@ import java.util.List;
  *   2. sidebar    -> map name on Bedwars
  *
  * Both are rendered client-side from packets the server always sends.
+ *
+ * 1.8.9's GuiPlayerTabOverlay exposes setHeader/setFooter but no getters, so the
+ * header is read reflectively. Forge runs deobfuscated names, so the field is
+ * literally "header"/"footer". Any failure returns null instead of throwing.
  */
 public final class ScoreboardProbe {
 
-    private static final String COLOR = "\u00a7";
+    private static Field headerField;
+    private static boolean fieldResolved;
 
     /** Server id such as "mini42AB" — the exact instance shared with the target. */
     public static String serverId() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.ingameGUI == null) return null;
-
-        GuiIngame gui = mc.ingameGUI;
-        IChatComponent header = gui.getTabList().getHeader();
+        IChatComponent header = tabHeader();
         if (header == null) return null;
 
         String plain = strip(header.getUnformattedText());
@@ -73,6 +75,44 @@ public final class ScoreboardProbe {
         return null;
     }
 
+    private static IChatComponent tabHeader() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.ingameGUI == null) return null;
+
+        GuiIngame gui = mc.ingameGUI;
+        Object overlay = gui.getTabList();
+        if (overlay == null) return null;
+
+        try {
+            if (!fieldResolved) {
+                fieldResolved = true;
+                headerField = findField(overlay.getClass());
+            }
+            if (headerField == null) return null;
+            Object value = headerField.get(overlay);
+            return value instanceof IChatComponent ? (IChatComponent) value : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Forge deobfuscates at runtime, but fall back to the notch name just in case. */
+    private static Field findField(Class<?> type) {
+        String[] candidates = { "header", "footer", "field_175256_f", "field_175255_g" };
+        for (String name : candidates) {
+            try {
+                Field f = type.getDeclaredField(name);
+                f.setAccessible(true);
+                return f;
+            } catch (NoSuchFieldException ignored) {
+                // try the next name
+            } catch (SecurityException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     private static List<String> sidebarLines() {
         List<String> out = new ArrayList<>();
         Minecraft mc = Minecraft.getMinecraft();
@@ -85,7 +125,7 @@ public final class ScoreboardProbe {
         if (obj == null) return out;
 
         for (Score score : sb.getSortedScores(obj)) {
-            String name = score.getScorePlayerName();
+            String name = score.getPlayerName();
             if (name != null) out.add(strip(name).trim());
         }
         return out;
